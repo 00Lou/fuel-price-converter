@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Global Fuel Price Comparison</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root {
+    --bg: #020617;
+    --card: #0f172a;
+    --accent: #38bdf8;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --error: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: linear-gradient(135deg, #020617, #0f172a);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 960px;
+    width: 100%;
+    padding: 24px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 6px;
+}
+
+.subtitle {
+    text-align: center;
+    color: var(--muted);
+    margin-bottom: 32px;
+}
+
+.card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 20px 40px rgba(0,0,0,.45);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+}
+
+label {
+    font-size: .85rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+    display: block;
+}
+
+input, select {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background: #020617;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+input:focus, select:focus {
+    outline: 2px solid var(--accent);
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #1e293b;
+    margin: 28px 0;
+}
+
+.result {
+    margin-top: 26px;
+    padding: 22px;
+    background: #020617;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.result-price {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: var(--accent);
+    display: block;
+}
+
+.result-unit {
+    font-size: .9rem;
+    color: var(--muted);
+}
+
+.footer {
+    margin-top: 18px;
+    text-align: center;
+    font-size: .8rem;
+    color: var(--muted);
+}
+
+.error { color: var(--error); }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>Fuel Price Comparison</h1>
+<div class="subtitle">
+    Reference tool for comparing fuel prices across currencies and volume standards
+</div>
+
+<div class="card">
+
+    <!-- SOURCE -->
+    <div class="grid">
+        <div>
+            <label>Original price</label>
+            <input type="number" id="price" placeholder="e.g. 1.45" step="0.01">
+        </div>
+
+        <div>
+            <label>Original unit</label>
+            <select id="fromUnit">
+                <option value="litre">Per litre</option>
+                <option value="usg">Per US gallon</option>
+                <option value="impg">Per Imperial gallon</option>
+            </select>
+        </div>
+
+        <div>
+            <label>Original currency</label>
+            <select id="fromCurrency">
+                <option>GBP</option>
+                <option>USD</option>
+                <option>EUR</option>
+                <option>CAD</option>
+                <option>AUD</option>
+            </select>
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- TARGET -->
+    <div class="grid">
+        <div>
+            <label>Target unit</label>
+            <select id="toUnit">
+                <option value="litre">Per litre</option>
+                <option value="usg">Per US gallon</option>
+                <option value="impg">Per Imperial gallon</option>
+            </select>
+        </div>
+
+        <div>
+            <label>Target currency</label>
+            <select id="toCurrency">
+                <option>GBP</option>
+                <option>USD</option>
+                <option>EUR</option>
+                <option>CAD</option>
+                <option>AUD</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="result">
+        <span class="result-unit" id="resultLabel">Converted price</span>
+        <span class="result-price" id="result">—</span>
+    </div>
+</div>
+
+<div class="footer" id="rateInfo">Fetching latest exchange rates…</div>
+<div class="footer">
+    Exchange rates via European Central Bank (Frankfurter API)<br>
+    1 US gal ≈ 3.785 L · 1 Imp gal ≈ 4.546 L
+</div>
+
+</div>
+
+<script>
+/* --- Constants --- */
+const LITRES = {
+    litre: 1,
+    usg: 3.785411784,
+    impg: 4.54609
+};
+
+const SYMBOL = {
+    GBP: "£",
+    USD: "$",
+    EUR: "€",
+    CAD: "CA$",
+    AUD: "A$"
+};
+
+let rates = null;
+
+/* --- Load exchange rates --- */
+async function loadRates() {
+    try {
+        const res = await fetch("https://api.frankfurter.app/latest");
+        const data = await res.json();
+
+        rates = data.rates;
+        rates.EUR = 1;
+
+        document.getElementById("rateInfo").innerText =
+            `Exchange rates updated: ${data.date} (ECB reference rates)`;
+
+        calculate();
+    } catch {
+        document.getElementById("rateInfo").innerHTML =
+            `<span class="error">Error loading exchange rates</span>`;
+    }
+}
+
+/* --- Core calculation --- */
+function calculate() {
+    if (!rates) return;
+
+    const price = parseFloat(priceEl.value);
+    if (isNaN(price)) {
+        resultEl.innerText = "—";
+        return;
+    }
+
+    const fromUnit = fromUnitEl.value;
+    const toUnit = toUnitEl.value;
+    const fromCur = fromCurrencyEl.value;
+    const toCur = toCurrencyEl.value;
+
+    // Normalize → EUR per litre
+    let perLitre = price / LITRES[fromUnit];
+    let eurPerLitre = perLitre / rates[fromCur];
+
+    // Convert → target
+    let converted = eurPerLitre * rates[toCur];
+    converted *= LITRES[toUnit];
+
+    resultEl.innerText =
+        `${SYMBOL[toCur]}${converted.toFixed(2)}`;
+
+    resultLabel.innerText =
+        `Price per ${unitLabel(toUnit)}`;
+}
+
+function unitLabel(u) {
+    return u === "litre" ? "litre"
+         : u === "usg" ? "US gallon"
+         : "Imperial gallon";
+}
+
+/* --- Elements & listeners --- */
+const priceEl = document.getElementById("price");
+const fromUnitEl = document.getElementById("fromUnit");
+const toUnitEl = document.getElementById("toUnit");
+const fromCurrencyEl = document.getElementById("fromCurrency");
+const toCurrencyEl = document.getElementById("toCurrency");
+const resultEl = document.getElementById("result");
+const resultLabel = document.getElementById("resultLabel");
+
+document.querySelectorAll("input, select")
+    .forEach(el => el.addEventListener("input", calculate));
+
+loadRates();
+</script>
+
+</body>
+</html>
